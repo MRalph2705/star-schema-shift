@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Star Schema Shift</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a blueprint clipboard over a factory floor. One narrow column: level card, the grid floor, a tool belt, then an inspector. */
+:root{
+  --paper:#eef2f6; --sheet:#ffffff; --ink:#16263d; --muted:#5a6b82; --line:#c9d4e2;
+  --accent:#e2611b; --good:#1f8a5b; --bad:#c23a3a; --goodbg:#e3f4ec; --badbg:#fbe7e7;
+  --belt:#d3dbe6; --cust:#2f62c9; --prod:#2c8a4a; --inv:#0d8585;
+  --display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0d1a2b;--sheet:#13243a;--ink:#e4ecf6;--muted:#93a6bf;--line:#2a4262;
+    --accent:#ff8a45;--good:#4cc794;--bad:#ff7a7a;--goodbg:#123a2d;--badbg:#3d1d22;
+    --belt:#22385a;--cust:#7aa7ff;--prod:#5fd08a;--inv:#4fd1d1;color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0d1a2b;--sheet:#13243a;--ink:#e4ecf6;--muted:#93a6bf;--line:#2a4262;
+  --accent:#ff8a45;--good:#4cc794;--bad:#ff7a7a;--goodbg:#123a2d;--badbg:#3d1d22;
+  --belt:#22385a;--cust:#7aa7ff;--prod:#5fd08a;--inv:#4fd1d1;color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  background-color:var(--paper);
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:28px 28px;background-position:-1px -1px;
+  color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5;
+}
+.wrap{max-width:600px;margin:0 auto;padding:16px 16px 56px;display:flex;flex-direction:column;gap:14px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.1}
+h1{font-weight:900;font-size:clamp(1.8rem,7vw,2.5rem);letter-spacing:-.02em}
+h2{font-weight:700;font-size:1.25rem}
+h3{font-weight:700;font-size:1.02rem}
+p{margin:0}
+.mono{font-family:var(--mono)}
+.tag{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.sheet{background:var(--sheet);border:1.5px solid var(--ink);border-radius:4px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.hero{border-top:6px solid var(--accent)}
+.top{display:flex;flex-direction:column;gap:10px}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);border:1.5px solid var(--ink);border-radius:4px;overflow:hidden;background:var(--sheet)}
+.tabs button{border:0;background:transparent;padding:10px 6px;font-family:var(--display);font-weight:700;border-right:1px solid var(--line)}
+.tabs button:last-child{border-right:0}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--sheet)}
+button{font:inherit;cursor:pointer;color:inherit}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button:disabled{cursor:not-allowed}
+.btn{background:var(--ink);color:var(--sheet);border:0;border-radius:4px;padding:11px 16px;font-family:var(--display);font-weight:700;font-size:1rem}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink)}
+.btn.sm{padding:7px 11px;font-size:.88rem}
+.btn:disabled{opacity:.45}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.between{justify-content:space-between}
+.foot{font-size:.82rem;color:var(--muted)}
+.foot a{color:inherit}
+.chip{font-family:var(--mono);font-size:.72rem;border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.chip.ok{border-color:var(--good);color:var(--good)}
+.chip.no{border-color:var(--bad);color:var(--bad)}
+.list{display:flex;flex-direction:column;gap:8px;list-style:none;padding:0;margin:0}
+.list li{display:grid;grid-template-columns:2.2rem 1fr;gap:10px;padding:12px;border:1px solid var(--line);border-radius:4px;background:var(--paper)}
+.list li .n{font-family:var(--mono);font-weight:600;color:var(--accent)}
+.list li .body{display:flex;flex-direction:column;gap:6px}
+.list li small{color:var(--muted);font-size:.88rem}
+.stars{font-family:var(--mono);color:var(--accent);letter-spacing:2px}
+/* factory */
+.objs{display:flex;flex-direction:column;gap:6px}
+.obj{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:.9rem}
+.obj b{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.obj .bar{grid-column:1/-1}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar span{display:block;height:100%;background:var(--accent);transition:width .25s}
+.obj.done .bar span{background:var(--good)}
+.stats{display:flex;gap:14px;font-family:var(--mono);font-size:.8rem;color:var(--muted)}
+.stats b{color:var(--ink);font-variant-numeric:tabular-nums}
+.stats .bad b{color:var(--bad)}
+.floorwrap{background:var(--sheet);border:1.5px solid var(--ink);border-radius:4px;padding:6px;position:relative}
+canvas{display:block;width:100%;touch-action:none;border-radius:2px}
+.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.controls .btn{padding:10px 4px;font-size:.92rem}
+.tools{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:6px}
+.tool{border:1.5px solid var(--line);background:var(--sheet);border-radius:4px;padding:8px 6px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:.78rem;line-height:1.2;text-align:center}
+.tool .code{font-family:var(--mono);font-weight:600;font-size:1rem}
+.tool[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.info{gap:8px}
+.info .log{display:flex;flex-direction:column;gap:6px;font-size:.9rem}
+.msg{border-left:4px solid var(--line);padding:4px 10px}
+.msg.bad{border-left-color:var(--bad);background:var(--badbg)}
+.msg.good{border-left-color:var(--good);background:var(--goodbg)}
+.legend{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:4px 12px;font-size:.82rem}
+.legend span{display:flex;gap:6px;align-items:center}
+.legend canvas{width:18px;height:18px;flex:none}
+.overlay{position:fixed;inset:0;background:color-mix(in srgb,var(--paper) 75%,transparent);display:flex;align-items:center;justify-content:center;padding:16px;z-index:5}
+.overlay .sheet{max-width:520px;width:100%;max-height:90vh;overflow:auto}
+/* quiz */
+.item{font-family:var(--mono);font-size:1.02rem;background:var(--paper);border:1.5px dashed var(--ink);border-radius:4px;padding:12px 14px}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opts.chips{flex-direction:row;flex-wrap:wrap}
+.opt{text-align:left;background:var(--sheet);border:1.5px solid var(--line);border-radius:4px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start}
+.opts.chips .opt{flex:1 1 140px;justify-content:center;text-align:center;font-weight:600}
+.opt:hover:not(:disabled){border-color:var(--ink)}
+.opt .k{font-family:var(--mono);color:var(--muted);font-size:.85rem;padding-top:1px}
+.opts.chips .opt .k{display:none}
+.opt:disabled{cursor:default}
+.opt.right{border-color:var(--good);background:var(--goodbg)}
+.opt.wrong{border-color:var(--bad);background:var(--badbg)}
+.verdict{border-left:5px solid var(--good);background:var(--goodbg);padding:12px 14px;border-radius:0 4px 4px 0;display:flex;flex-direction:column;gap:6px}
+.verdict.no{border-left-color:var(--bad);background:var(--badbg)}
+.verdict strong{font-family:var(--display)}
+.concept{font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+.matrix{overflow-x:auto}
+.matrix table{border-collapse:collapse;width:100%;min-width:420px;font-size:.9rem}
+.matrix th,.matrix td{border:1px solid var(--line);padding:0;text-align:center}
+.matrix th{font-family:var(--mono);font-weight:600;font-size:.72rem;padding:6px 4px;background:var(--paper)}
+.matrix th.p{text-align:left;padding:6px 8px;font-size:.8rem}
+.cell{width:100%;min-height:40px;border:0;background:transparent;font-family:var(--mono);font-size:1.1rem}
+.cell.on{background:var(--ink);color:var(--sheet)}
+.clues{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:.93rem}
+.manual{display:flex;flex-direction:column;gap:8px}
+.manual details{border:1px solid var(--line);border-radius:4px;padding:8px 12px;background:var(--paper)}
+.manual summary{cursor:pointer;font-weight:600}
+.manual details p{margin-top:6px;color:var(--muted);font-size:.93rem}
+.manual .locked summary{color:var(--muted);font-weight:400}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div><span class="tag">Halden Outfitters · Data floor</span><h1>Star Schema Shift</h1></div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tab-factory" data-tab="factory">Factory</button>
+      <button role="tab" id="tab-research" data-tab="research">Research lab</button>
+      <button role="tab" id="tab-manual" data-tab="manual">Manual</button>
+    </nav>
+  </header>
+  <main id="view"></main>
+</div>
+<div id="overlay"></div>
+
+<script>
+/* =====================================================================
+   RESEARCH PACKS (quiz). Original scenarios; ideas from dimensional modelling.
+   ===================================================================== */
+const SHIFTS = [
+ {id:1,name:"Sorting the dock",sub:"Facts, dimensions and the odd one out",qs:[
+  {type:"sort",item:"Extended sales amount on a receipt line",opts:["Fact","Dimension attribute","Degenerate dimension"],a:0,
+   why:"It is a numeric measurement produced by the sales event, so it belongs in the fact table.",concept:"Facts for measurements"},
+  {type:"sort",item:"Product brand name",opts:["Fact","Dimension attribute","Degenerate dimension"],a:1,
+   why:"Brand is descriptive text people filter and group by. Text that describes the who, what, where and when lives in dimensions.",concept:"Dimensions for descriptive context"},
+  {type:"sort",item:"POS transaction number",opts:["Fact","Dimension attribute","Degenerate dimension"],a:2,
+   why:"It identifies the basket but has no attributes of its own once the date, store and cashier are split out. Keep it in the fact table as a degenerate dimension so you can still group lines into baskets.",concept:"Degenerate dimensions"},
+  {type:"sort",item:"Store sales region",opts:["Fact","Dimension attribute","Degenerate dimension"],a:1,
+   why:"Region is part of the store's description and of its geographic hierarchy, so it is an attribute on the store dimension.",concept:"Dimensions for descriptive context"},
+  {type:"mc",q:"The product's list price is a number. A product manager wants to filter the catalogue into price bands like \"Under £20\". Where should that banded value live?",
+   opts:["In the fact table, because every number is a fact","As an attribute on the product dimension, because it is used to label and constrain","Nowhere; compute it in every report"],a:1,
+   why:"A number used mainly to filter or label behaves like a descriptor, so it fits in the dimension. A number measured at each event and summed belongs in the fact table. Some values earn a place in both.",concept:"Numeric values as attributes or facts"}
+ ]},
+ {id:2,name:"Declaring the grain",sub:"Decide what one row means before anything else",qs:[
+  {type:"mc",q:"You are starting a new design. In what order do you make the four design decisions?",
+   opts:["Facts → dimensions → grain → business process","Business process → grain → dimensions → facts","Grain → business process → facts → dimensions","Dimensions → facts → business process → grain"],a:1,
+   why:"Choose the business process to model, declare the grain, then pick dimensions and facts that are true to that grain.",concept:"Four-step dimensional design process"},
+  {type:"mc",q:"Merchandisers want to know which products end up in the same basket. Which grain should the retail sales fact table have?",
+   opts:["One row per product, per store, per day","One row per product line on each POS transaction","One row per POS transaction","One row per store, per month"],a:1,
+   why:"Only the atomic line-item grain keeps every product inside its basket. You can always roll atomic data up, but you can never drill below the grain you declared.",concept:"Grain"},
+  {type:"mc",q:"A colleague wants to add \"monthly sales target\" as a column in your line-item sales fact table. What's the problem?",
+   opts:["Nothing, more facts is better","The target is stated at a different grain (month), so it would be repeated and overcounted","Targets must always be stored as text"],a:1,
+   why:"Every fact in a table must match the declared grain. A monthly target would repeat on thousands of rows and inflate any sum. Give it its own fact table at month grain.",concept:"Grain"},
+  {type:"mc",q:"The finance lead says: \"We only ever look at monthly totals, so just load summaries.\" What's the best reply?",
+   opts:["Agree; summaries are faster and smaller","Load atomic detail first and add aggregates for speed later, because tomorrow's questions are unpredictable","Load only the newest month"],a:1,
+   why:"Atomic data stands up to ad hoc questions nobody has asked yet. Aggregate tables can be built on top later for performance without throwing away detail.",concept:"Aggregated fact tables or cubes"}
+ ]},
+ {id:3,name:"Counting stock",sub:"What you can and can't add up",qs:[
+  {type:"sort",item:"Quantity sold",opts:["Additive","Semi-additive","Non-additive"],a:0,
+   why:"You can sum quantity across every dimension: products, stores and days.",concept:"Additive, semi-additive and non-additive facts"},
+  {type:"sort",item:"Units on hand in a nightly inventory snapshot",opts:["Additive","Semi-additive","Non-additive"],a:1,
+   why:"You can add on-hand units across products or warehouses, but adding Monday's level to Tuesday's is meaningless. Across time, average it or take the period-end value.",concept:"Additive, semi-additive and non-additive facts"},
+  {type:"sort",item:"Gross margin percentage",opts:["Additive","Semi-additive","Non-additive"],a:2,
+   why:"Ratios can't be summed. Store the additive pieces (revenue and cost) and calculate the percentage after aggregating.",concept:"Additive, semi-additive and non-additive facts"},
+  {type:"sort",item:"Month-end bank account balance",opts:["Additive","Semi-additive","Non-additive"],a:1,
+   why:"Balances add across accounts but not across months, just like inventory levels.",concept:"Additive, semi-additive and non-additive facts"}
+ ]},
+ {id:4,name:"Picking the table",sub:"Transaction, snapshot, accumulating or factless",qs:[
+  {type:"mc",q:"Every scan at the till should be captured the moment it happens.",
+   opts:["Transaction fact table","Periodic snapshot","Accumulating snapshot","Factless fact table"],a:0,
+   why:"One row per discrete event at a single point in time is a transaction fact table, the most common and most detailed type.",concept:"Transaction fact tables"},
+  {type:"mc",q:"Finance wants each account's balance, fees and interest at every month end, even for accounts with no activity.",
+   opts:["Transaction fact table","Periodic snapshot","Accumulating snapshot","Factless fact table"],a:1,
+   why:"A periodic snapshot records state at regular intervals, and a row exists even if nothing happened that period.",concept:"Periodic snapshot fact tables"},
+  {type:"mc",q:"Ops want to track each order through ordered → picked → shipped → delivered, including the days between steps.",
+   opts:["Transaction fact table","Periodic snapshot","Accumulating snapshot","Factless fact table"],a:2,
+   why:"A process with a clear start, end and milestones suits an accumulating snapshot. Each row is revisited as the order moves forward, with several date keys and lag facts for elapsed time.",concept:"Accumulating snapshot fact tables"},
+  {type:"mc",q:"Marketing asks: \"Which promoted products sold nothing during the promotion?\"",
+   opts:["Transaction fact table","Periodic snapshot","Accumulating snapshot","Factless fact table"],a:3,
+   why:"Sales rows only exist when something sold. A factless coverage table records which products were on promotion, so you can subtract the products that did sell and find the ones that didn't.",concept:"Factless fact tables"},
+  {type:"mc",q:"Freight is charged once per order header, but you want profit by product line. What do you do?",
+   opts:["Leave freight in a header table and join headers to lines at query time","Allocate the freight down to the line grain, using an agreed business rule","Ignore freight in product analysis"],a:1,
+   why:"Allocating header facts to the line level keeps a single grain and lets every line carry its share, so products can be sliced without tricky joins.",concept:"Allocated facts"}
+ ]},
+ {id:5,name:"Change control",sub:"Slowly changing dimensions",qs:[
+  {type:"mc",q:"A customer's surname was misspelled at sign-up. Nobody needs the old spelling.",
+   opts:["Type 0: keep the original","Type 1: overwrite","Type 2: add a new row","Type 3: add a prior-value column"],a:1,
+   why:"Correcting an error with no history value is a Type 1 overwrite. Note that any aggregates built on that attribute may need refreshing.",concept:"Type 1: Overwrite"},
+  {type:"mc",q:"A sales rep moves from the North to the South region. Past sales must stay credited to North; new sales go to South.",
+   opts:["Type 1: overwrite","Type 2: add a new row","Type 3: add a prior-value column","Type 0: keep the original"],a:1,
+   why:"Type 2 adds a new dimension row with a new surrogate key, so old facts point at the North version and new facts at the South version. History is partitioned correctly.",concept:"Type 2: Add new row"},
+  {type:"mc",q:"Sales districts are being redrawn. For one quarter, managers want every report available under both the old and new map.",
+   opts:["Type 2: add a new row","Type 3: add a prior-value column","Type 1: overwrite","Type 4: mini-dimension"],a:1,
+   why:"Type 3 keeps a \"prior district\" column next to the current one, so all history can be viewed under either map. It suits a one-off reorganisation rather than frequent changes.",concept:"Type 3: Add new attribute"},
+  {type:"mc",q:"Each customer's credit band at sign-up must never change, whatever happens later.",
+   opts:["Type 0: keep the original","Type 1: overwrite","Type 2: add a new row","Type 6: hybrid"],a:0,
+   why:"Attributes labelled \"original\" are Type 0. They are set once and never updated.",concept:"Type 0: Retain original"},
+  {type:"mc",q:"Your 20-million-row customer dimension is ballooning because age band and income band change constantly under Type 2.",
+   opts:["Switch everything to Type 1","Move the volatile bands into a small mini-dimension keyed directly from the fact table","Delete old rows each night"],a:1,
+   why:"A mini-dimension (Type 4) holds the fast-changing banded attributes as a small set of combinations. The fact table carries its key, so the big customer dimension stops growing.",concept:"Type 4: Add mini-dimension"},
+  {type:"mc",q:"Why can't the source system's customer ID be the primary key of a Type 2 customer dimension?",
+   opts:["Source IDs are too long","One customer now has several rows, so each version needs its own warehouse-assigned surrogate key","Primary keys must be dates"],a:1,
+   why:"Type 2 produces several rows for one natural key. Meaningless surrogate keys tell the versions apart and protect the warehouse from source-system key changes.",concept:"Dimension surrogate keys"}
+ ]},
+ {id:6,name:"Integration day",sub:"Making the whole warehouse fit together",qs:[
+  {type:"mc",q:"Sales and Support built separate customer tables with different IDs and attributes. Combining their numbers in one report fails. What's the fix?",
+   opts:["Build a third customer table","Create one conformed customer dimension that both fact tables share","Join the two fact tables directly"],a:1,
+   why:"Conformed dimensions have the same keys, attribute names and values everywhere. They let you drill across processes and get consistent row headers.",concept:"Conformed dimensions"},
+  {type:"matrix",q:"Fill in the bus matrix. Tap each cell where a business process uses that dimension.",
+   procs:["Orders","Shipments","Returns","Nightly inventory"],
+   dims:["Date","Product","Customer","Warehouse","Promo"],
+   answer:[[1,1,1,0,1],[1,1,1,1,0],[1,1,1,1,0],[1,1,0,1,0]],
+   clues:["Orders are taken online with promotions applied. Warehouses aren't assigned until shipping.","Shipments leave a specific warehouse for a customer. Promotions don't matter any more.","Returns come back from a customer to a specific warehouse.","Inventory is counted per product, per warehouse, each night. Customers aren't involved."],
+   why:"The bus matrix puts business processes in rows and conformed dimensions in columns. The columns that recur (Date, Product) are the dimensions to build carefully first, because every later project reuses them.",concept:"Enterprise data warehouse bus matrix"},
+  {type:"mc",q:"A developer wants to normalise the product dimension into separate brand, category and department tables.",
+   opts:["Good idea; normalisation always wins","Usually avoid it; a single flattened product table is easier to use and faster to query","Required by every BI tool"],a:1,
+   why:"Snowflaking saves little space, since dimensions are small next to facts, and it adds joins that confuse users and slow queries. A denormalised, flattened dimension is the default.",concept:"Snowflaked dimensions"},
+  {type:"mc",q:"Your order fact table has six little flags: payment type, gift wrap, rush delivery and so on. Each has only a few values.",
+   opts:["Make six tiny dimensions","Combine them into a single junk dimension","Drop them"],a:1,
+   why:"A junk dimension holds the combinations of low-cardinality flags. One key in the fact table replaces six, and the flags stay queryable.",concept:"Junk dimensions"},
+  {type:"mc",q:"Orders need order date, ship date and delivery date, and each needs fiscal period, weekday and holiday flags.",
+   opts:["Build three separate calendar tables","Use one date dimension playing three roles, through views with distinct column names","Store the dates as plain text in the fact table"],a:1,
+   why:"Role-playing dimensions reuse a single physical table under different labelled views, so the date attributes are defined once.",concept:"Role-playing dimensions"},
+  {type:"mc",q:"A joint bank account has three holders, and the bank wants balances by holder demographics.",
+   opts:["Repeat the account fact three times","Use a bridge table linking the account to its holders, with a weighting factor","Pick one holder at random"],a:1,
+   why:"Multivalued dimensions use a bridge table. Weighting factors let a balance be split between holders, so totals don't triple.",concept:"Multivalued dimensions and bridge tables"}
+ ]}
+];
+
+/* =====================================================================
+   FACTORY DATA
+   ===================================================================== */
+const W = 10, H = 10;
+const DIRS = [[0,-1],[1,0],[0,1],[-1,0]];
+const ARROWS = ["↑","→","↓","←"];
+
+const ITEMS = {
+  rawCust:{n:"Raw customer record",fam:"cust",sh:"raw",g:"c"},
+  rawProd:{n:"Raw product record",fam:"prod",sh:"raw",g:"p"},
+  rawSale:{n:"Sale line from the till",fam:"sale",sh:"raw",g:"s"},
+  rawOrder:{n:"Web order line",fam:"sale",sh:"raw",g:"o"},
+  rawWeb:{n:"Web shop sign-up",fam:"cust",sh:"raw",g:"w"},
+  custChange:{n:"Customer change: moved region",fam:"cust",sh:"raw",g:"Δ"},
+  invCount:{n:"Nightly stock count",fam:"inv",sh:"raw",g:"i"},
+  custDim:{n:"Customer dimension row",fam:"cust",sh:"dim",g:"C"},
+  prodDim:{n:"Product dimension row",fam:"prod",sh:"dim",g:"P"},
+  custVer:{n:"Customer row, new version (Type 2)",fam:"cust",sh:"dim",g:"2"},
+  custOver:{n:"Customer row, overwritten (Type 1)",fam:"cust",sh:"dim",g:"1"},
+  confCust:{n:"Conformed customer row",fam:"cust",sh:"dim",g:"★"},
+  fact:{n:"Sales fact row",fam:"sale",sh:"fact",g:"F"},
+  agg:{n:"Aggregate summary row",fam:"sale",sh:"sum",g:"Σ"},
+  snap:{n:"Inventory snapshot row",fam:"inv",sh:"fact",g:"S"},
+  orphan:{n:"Orphan fact (no keys to point at)",fam:"bad",sh:"bad",g:"?"},
+  badsum:{n:"Stock levels summed across time",fam:"bad",sh:"bad",g:"!"}
+};
+const DIMTYPES = ["custDim","prodDim","custVer","custOver","confCust"];
+
+/* Buildings. need = research packs (index into SHIFTS) that unlock it. */
+const TILES = {
+  look:{name:"Inspect",code:"?",tool:true,info:"Tap anything on the floor to see what it does and what it's holding."},
+  belt:{name:"Belt",code:"≡",need:[],info:"Moves one record per tick in the arrow direction. Drag to lay a run of belts. Feed one belt into the side of another to merge two streams."},
+  KS:{name:"Key Stamper",code:"KS",need:[],accept:["rawCust","rawProd"],
+      info:"Turns a raw customer or product record into a dimension row, stamped with a surrogate key the warehouse owns. Output leaves from the arrow side.",
+      lesson:"Dimension surrogate keys"},
+  DT:{name:"Dimension table",code:"DIM",need:[],sink:true,
+      info:"Stores dimension rows. Takes input from any side. A fact can only be built once the dimensions it refers to have rows here.",
+      lesson:"Dimensions for descriptive context"},
+  FA:{name:"Fact Assembler",code:"FA",need:[0,1],accept:["rawSale","rawOrder"],
+      info:"Turns each sale line into one fact row at line-item grain, looking up the customer and product surrogate keys. If those dimensions have no rows yet, it can only produce an orphan.",
+      lesson:"Grain"},
+  V2:{name:"Versioner (Type 2)",code:"T2",need:[4],accept:["custChange"],
+      info:"Handles a customer change by adding a new row with a new surrogate key. Old facts keep pointing at the old version, so history stays true.",
+      lesson:"Type 2: Add new row"},
+  OW:{name:"Overwriter (Type 1)",code:"T1",need:[4],accept:["custChange"],
+      info:"Handles a customer change by overwriting the existing row. Quick and small, but the old value is gone for every past fact.",
+      lesson:"Type 1: Overwrite"},
+  CF:{name:"Conformer",code:"CF",need:[5],accept:["rawCust","rawWeb"],
+      info:"Matches customers from any source system into one shared, conformed customer dimension, so different fact tables can be compared side by side.",
+      lesson:"Conformed dimensions"},
+  AG:{name:"Aggregator",code:"Σ",need:[2],accept:["fact","snap","invCount"],
+      info:"Rolls 4 atomic sales facts up into 1 summary row for fast dashboards. Feed it stock levels and it will add them across time, which is never right.",
+      lesson:"Aggregated fact tables or cubes"},
+  SN:{name:"Snapshotter",code:"SN",need:[3],accept:["invCount"],
+      info:"Collects 2 nightly stock counts into 1 periodic snapshot row: the state of inventory at a regular interval.",
+      lesson:"Periodic snapshot fact tables"},
+  del:{name:"Remove",code:"✕",tool:true,info:"Tap a building or belt you placed to remove it. Anything it was holding is lost."}
+};
+const MACHINES = ["KS","FA","V2","OW","CF","AG","SN"];
+
+const DEFECT_TEXT = {
+  orphan:"Orphan fact. A sale reached the Fact Assembler before its customer and product rows were loaded, so it had no keys to point at. Load the dimensions first.",
+  badsum:"Stock levels added across time. Inventory counts are semi-additive: add them across products or warehouses, never across days. Send them to a Snapshotter instead.",
+  custOver:"History lost. The Type 1 Overwriter replaced the customer's old region, so past sales now look as if they happened in the new one. Finance needs Type 2 here.",
+  custDim:"Unconformed customer. This row only knows the CRM's version of a customer, so web orders can't be compared with till sales. Route customers through the Conformer.",
+  unwanted:"The dashboard didn't ask for this."
+};
+
+function src(x,y,d,emit,rate,label,delay){return {k:"src",x,y,d,emit,rate,label,delay:delay||0}}
+const LEVELS = [
+ {id:1,name:"First load",tools:["belt","KS","DT"],
+  brief:"The CRM and product catalogue are sending raw records. Stamp them with surrogate keys and load them into a Dimension table.",
+  fixed:[src(0,2,1,"rawCust",3,"CRM"),src(0,7,1,"rawProd",3,"CAT")],
+  obj:[{where:"store",type:"custDim",n:6,label:"Customer rows loaded"},{where:"store",type:"prodDim",n:6,label:"Product rows loaded"}],
+  hint:"Lay a belt from each source towards the middle and merge them into one Key Stamper. Put a Dimension table on the Key Stamper's arrow side.",
+  debrief:"Every dimension row now carries a surrogate key the warehouse controls, independent of whatever ID the CRM or catalogue uses. That's what lets you track history and survive source-system changes later.",
+  concept:"Dimension surrogate keys"},
+ {id:2,name:"A star is born",tools:["belt","KS","DT","FA"],
+  brief:"The till starts streaming sale lines shortly. Turn each line into a fact that points at a customer and a product, and ship 10 facts to the BI dock.",
+  fixed:[src(0,1,1,"rawCust",4,"CRM"),src(0,8,1,"rawProd",4,"CAT"),src(5,0,2,"rawSale",3,"POS",16),{k:"dock",x:9,y:5,d:3}],
+  obj:[{where:"dock",type:"fact",n:10,label:"Sales facts at the BI dock"}],
+  dockWants:["fact"],
+  hint:"Build the dimension line first: sources → Key Stamper → Dimension table. Then route the till into a Fact Assembler whose arrow points at the BI dock. Sales arriving before any dimension rows exist become orphans.",
+  debrief:"You've built a star: a fact table at line-item grain surrounded by the dimensions it refers to. Facts hold the measurements; dimensions hold the descriptions; surrogate keys join them.",
+  concept:"Star schemas and OLAP cubes"},
+ {id:3,name:"History matters",tools:["belt","KS","DT","FA","V2","OW"],
+  brief:"Customers are moving region. Finance wants every past sale credited to the region the customer had at the time. Products are already loaded.",
+  fixed:[src(0,1,1,"rawCust",4,"CRM"),src(0,5,1,"custChange",4,"CHG",6),src(6,0,2,"rawSale",3,"POS",16),{k:"dock",x:9,y:7,d:3},{k:"DT",x:3,y:9,d:0,pre:{prodDim:30}}],
+  obj:[{where:"store",type:"custVer",n:5,label:"New customer versions loaded"},{where:"dock",type:"fact",n:10,label:"Sales facts at the BI dock"}],
+  dockWants:["fact"], bad:{custOver:"custOver"},
+  hint:"Changes (Δ) need their own machine. The Overwriter is tempting, but it erases the old region. Send changes through the Versioner and on into a Dimension table.",
+  debrief:"A Type 2 change adds a row instead of editing one. Old facts keep the old surrogate key, new facts get the new one, so a report by region is true for every point in time.",
+  concept:"Type 2: Add new row"},
+ {id:4,name:"Two front doors",tools:["belt","KS","DT","FA","CF"],
+  brief:"Customers now sign up in store (CRM) and on the web shop, and web orders flow alongside till sales. Head office wants one view of each customer across both channels.",
+  fixed:[src(0,2,1,"rawCust",4,"CRM"),src(0,6,1,"rawWeb",4,"WEB"),src(3,0,2,"rawSale",4,"POS",18),src(7,0,2,"rawOrder",4,"ORD",18),{k:"dock",x:9,y:4,d:3},{k:"DT",x:4,y:9,d:0,pre:{prodDim:30}}],
+  obj:[{where:"store",type:"confCust",n:8,label:"Conformed customers loaded"},{where:"dock",type:"fact",n:12,label:"Sales facts at the BI dock"}],
+  dockWants:["fact"], custTypes:["confCust"], bad:{custDim:"custDim"},
+  hint:"The Key Stamper only speaks CRM and makes a second, unconformed customer table. Merge both customer streams into a Conformer, and both sales streams into one Fact Assembler.",
+  debrief:"One conformed customer dimension, shared by in-store and online facts, means both channels can be drilled across with the same labels and keys. That shared dimension is the backbone of the bus architecture.",
+  concept:"Conformed dimensions"},
+ {id:5,name:"Stocktake",tools:["belt","KS","DT","FA","AG","SN"],
+  brief:"The exec dashboard is slow. It wants pre-built sales aggregates and nightly inventory snapshots. Customer and product dimensions are already loaded.",
+  fixed:[src(2,0,2,"rawSale",2,"POS"),src(7,0,2,"invCount",3,"WMS"),{k:"dock",x:5,y:9,d:0},{k:"DT",x:0,y:9,d:0,pre:{custDim:30,prodDim:30}}],
+  obj:[{where:"dock",type:"agg",n:4,label:"Sales aggregates at the dock"},{where:"dock",type:"snap",n:5,label:"Inventory snapshots at the dock"}],
+  dockWants:["agg","snap"],
+  hint:"Sales: Fact Assembler → Aggregator → dock. Stock counts: Snapshotter → dock. Don't let stock counts or snapshots anywhere near the Aggregator.",
+  debrief:"Aggregates are built on top of atomic facts, never instead of them, and only for measures that can be summed. Stock levels go into a periodic snapshot because adding them across days means nothing.",
+  concept:"Additive, semi-additive and non-additive facts"}
+];
+
+/* =====================================================================
+   PERSISTENCE (one viewer's browser only)
+   ===================================================================== */
+let P = {research:{},levels:{},learned:{},missed:{}};
+try{ const s = JSON.parse(localStorage.getItem("sss2")||"null"); if(s) P = Object.assign(P,s); }catch(e){}
+function save(){ try{ localStorage.setItem("sss2", JSON.stringify(P)); }catch(e){} }
+
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const unlocked = k => (TILES[k].need||[]).every(i=>P.research[i]);
+const levelOpen = L => (L.id===1 || P.levels[L.id-1]) && L.tools.every(unlocked);
+
+/* =====================================================================
+   APP SHELL
+   ===================================================================== */
+const view = document.getElementById("view");
+const overlay = document.getElementById("overlay");
+let TAB = "factory";
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{ TAB=b.dataset.tab; if(TAB!=="factory") pauseGame(); render(); });
+
+function render(){
+  document.querySelectorAll(".tabs button").forEach(b=>b.setAttribute("aria-selected", b.dataset.tab===TAB ? "true":"false"));
+  if(TAB==="factory") return G ? renderFactory() : renderLevels();
+  if(TAB==="research") return Q ? renderQuiz() : renderLab();
+  if(TAB==="manual") return renderManual();
+}
+
+/* ---------- Level select ---------- */
+function renderLevels(){
+  view.innerHTML = `
+  <section class="sheet hero">
+    <span class="tag">Day one on the data floor</span>
+    <h2>Build the warehouse, one belt at a time</h2>
+    <p>Raw records pour out of Halden's source systems. Lay belts and machines that turn them into a star schema the BI team can trust. Research new machines in the lab by answering design questions. Bad modelling decisions show up as defects on the floor.</p>
+  </section>
+  <section class="sheet"><span class="tag">Floor plans</span>
+  <ol class="list">${LEVELS.map(L=>{
+    const open = levelOpen(L), st = P.levels[L.id];
+    const missing = L.tools.filter(t=>!unlocked(t));
+    const prevDone = L.id===1 || P.levels[L.id-1];
+    return `<li><span class="n">0${L.id}</span><div class="body">
+      <div class="row between"><h3>${esc(L.name)}</h3>${st?`<span class="stars" aria-label="${st} of 3 stars">${"★".repeat(st)}${"☆".repeat(3-st)}</span>`:""}</div>
+      <small>${esc(L.brief)}</small>
+      <div class="row">${L.tools.filter(t=>t!=="belt").map(t=>`<span class="chip ${unlocked(t)?"ok":"no"}">${TILES[t].code} ${esc(TILES[t].name)}${unlocked(t)?"":" · locked"}</span>`).join("")}</div>
+      <div class="row"><button class="btn sm" data-lv="${L.id}" ${open?"":"disabled"}>${st?"Replay":"Open floor"}</button>
+      ${!open?`<small>${!prevDone?`Clear floor 0${L.id-1} first.`:""} ${missing.length?`Research needed: ${[...new Set(missing.flatMap(t=>TILES[t].need))].filter(i=>!P.research[i]).map(i=>esc(SHIFTS[i].name)).join(", ")}.`:""}</small>`:""}</div>
+    </div></li>`;}).join("")}</ol></section>
+  <p class="foot">Based on the ideas in <em>The Data Warehouse Toolkit</em> (Kimball &amp; Ross, 3rd ed., Wiley 2013) and the Kimball Group's public list of <a href="https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/">dimensional modelling techniques</a>. All scenarios, buildings and explanations are original.</p>`;
+  view.querySelectorAll("[data-lv]").forEach(b=>b.onclick=()=>startLevel(+b.dataset.lv));
+}
+
+/* =====================================================================
+   FACTORY SIMULATION
+   ===================================================================== */
+let G = null;
+const SPEEDS = [1,2,4];
+const tickMs = () => 360 / SPEEDS[G.speed];
+
+function startLevel(id){
+  const L = LEVELS.find(l=>l.id===id);
+  const grid = Array.from({length:H},()=>Array(W).fill(null));
+  G = {L, grid, tick:0, running:false, speed:0, rot:1, tool:"belt", defects:0, store:{}, dims:{}, dock:{}, seen:{},
+       msgs:[{t:"Paused. Build first, then press Play. Sources start sending as soon as the floor runs.",c:""}], won:false, last:0, fx:[], inspect:null};
+  for(const f of L.fixed){
+    const c = Object.assign({fixed:true,buf:[],out:[],t:0,prod:null,refuse:-9,pending:false}, f);
+    grid[f.y][f.x] = c;
+    if(f.pre) for(const k in f.pre) G.dims[k]=(G.dims[k]||0)+f.pre[k];
+  }
+  overlay.innerHTML = "";
+  TAB = "factory"; render();
+}
+function resetLevel(){ if(G) startLevel(G.L.id); }
+function pauseGame(){ if(G) G.running=false; }
+
+const cellAt = (x,y) => (x<0||y<0||x>=W||y>=H) ? undefined : G.grid[y][x];
+const front = (x,y,d) => [x+DIRS[d][0], y+DIRS[d][1]];
+function say(t,c){ G.msgs.unshift({t,c:c||""}); G.msgs = G.msgs.slice(0,4); renderInfo(); }
+
+function defect(kind){
+  G.defects++;
+  const first = !G.seen[kind]; G.seen[kind]=true;
+  say((first?"":"Again: ")+DEFECT_TEXT[kind], "bad");
+}
+
+function tryDeliver(tx,ty,type,fx,fy){
+  const t = cellAt(tx,ty);
+  if(!t) return false;
+  if(t.k==="belt"){
+    if(t.item) return false;
+    const [bx,by] = front(tx,ty,t.d);
+    if(bx===fx && by===fy) return false; // head-on belts
+    t.item = {type, fx, fy, moved:true};
+    return true;
+  }
+  if(MACHINES.includes(t.k)){
+    if(!TILES[t.k].accept.includes(type)){ t.refuse=G.tick; return false; }
+    if(t.buf.length>=6) return false;
+    t.buf.push(type); G.fx.push({type,fx,fy,tx,ty}); return true;
+  }
+  if(t.k==="DT"){
+    if(!DIMTYPES.includes(type)){ t.refuse=G.tick; return false; }
+    G.dims[type]=(G.dims[type]||0)+1; G.store[type]=(G.store[type]||0)+1;
+    G.fx.push({type,fx,fy,tx,ty});
+    if(G.L.bad && G.L.bad[type]) defect(G.L.bad[type]);
+    return true;
+  }
+  if(t.k==="dock"){
+    G.dock[type]=(G.dock[type]||0)+1; G.fx.push({type,fx,fy,tx,ty});
+    if(ITEMS[type].fam!=="bad" && !(G.L.dockWants||[]).includes(type)){
+      G.defects++; say(`${DEFECT_TEXT.unwanted} It wanted ${(G.L.dockWants||[]).map(t=>ITEMS[t].n.toLowerCase()).join(" and ")}, not a ${ITEMS[type].n.toLowerCase()}.`,"bad");
+    }
+    return true;
+  }
+  return false;
+}
+
+function dimsReady(){
+  const ct = G.L.custTypes || ["custDim","custVer","confCust"];
+  return ct.some(t=>(G.dims[t]||0)>0) && (G.dims.prodDim||0)>0;
+}
+function take(buf,type,n){ for(let i=0;i<n;i++){ buf.splice(buf.indexOf(type),1); } }
+const count = (buf,type) => buf.filter(b=>b===type).length;
+const RECIPES = {
+  KS: b => b.includes("rawCust") ? (take(b,"rawCust",1),"custDim") : b.includes("rawProd") ? (take(b,"rawProd",1),"prodDim") : null,
+  FA: b => { const s = b.includes("rawSale")?"rawSale":b.includes("rawOrder")?"rawOrder":null; if(!s) return null; take(b,s,1);
+             if(dimsReady()) return "fact"; defect("orphan"); return "orphan"; },
+  V2: b => b.includes("custChange") ? (take(b,"custChange",1),"custVer") : null,
+  OW: b => b.includes("custChange") ? (take(b,"custChange",1),"custOver") : null,
+  CF: b => b.includes("rawCust") ? (take(b,"rawCust",1),"confCust") : b.includes("rawWeb") ? (take(b,"rawWeb",1),"confCust") : null,
+  AG: b => { for(const s of ["snap","invCount"]) if(b.includes(s)){ take(b,s,1); defect("badsum"); return "badsum"; }
+             return count(b,"fact")>=4 ? (take(b,"fact",4),"agg") : null; },
+  SN: b => count(b,"invCount")>=2 ? (take(b,"invCount",2),"snap") : null
+};
+
+function tick(){
+  G.tick++;
+  G.fx = [];
+  const cells = [];
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){ const c=G.grid[y][x]; if(c){ cells.push([x,y,c]); if(c.item){ c.item.fx=x; c.item.fy=y; c.item.moved=false; } } }
+  // belts: repeated passes so a packed line advances together
+  let moved = true, pass = 0;
+  while(moved && pass++ < 40){
+    moved = false;
+    for(const [x,y,c] of cells){
+      if(c.k!=="belt" || !c.item || c.item.moved) continue;
+      const [tx,ty] = front(x,y,c.d);
+      const it = c.item; c.item = null;
+      if(tryDeliver(tx,ty,it.type,x,y)) moved = true; else c.item = it;
+    }
+  }
+  // machines
+  for(const [x,y,c] of cells){
+    if(!MACHINES.includes(c.k)) continue;
+    if(c.prod){ c.t--; if(c.t<=0 && c.out.length<3){ c.out.push(c.prod); c.prod=null; } }
+    if(!c.prod){ const r = RECIPES[c.k](c.buf); if(r){ c.prod=r; c.t=2; } }
+    if(c.out.length){ const [tx,ty]=front(x,y,c.d); if(tryDeliver(tx,ty,c.out[0],x,y)) c.out.shift(); }
+  }
+  // sources
+  for(const [x,y,c] of cells){
+    if(c.k!=="src") continue;
+    if(G.tick>c.delay && (G.tick-c.delay)%c.rate===0) c.pending=true;
+    if(c.pending){ const [tx,ty]=front(x,y,c.d); if(tryDeliver(tx,ty,c.emit,x,y)) c.pending=false; }
+  }
+  renderHud();
+  checkWin();
+}
+
+function objVal(o){ return o.where==="store" ? (G.store[o.type]||0) : (G.dock[o.type]||0); }
+function checkWin(){
+  if(G.won) return;
+  if(G.L.obj.every(o=>objVal(o)>=o.n)){
+    G.won=true; G.running=false;
+    const stars = G.defects===0?3:G.defects<=3?2:1;
+    P.levels[G.L.id] = Math.max(P.levels[G.L.id]||0, stars); save();
+    showWin(stars);
+  }
+}
+
+/* ---------- Placement ---------- */
+function place(x,y,k){
+  const c = cellAt(x,y);
+  if(c && c.fixed){ G.inspect=[x,y]; renderInfo(); return; }
+  if(k==="del"){ if(c){ G.grid[y][x]=null; } return; }
+  if(k==="look"){ G.inspect=[x,y]; renderInfo(); return; }
+  if(c && c.k===k){ c.d=(c.d+1)%4; G.rot=c.d; renderControls(); return; }
+  G.grid[y][x] = {k, x, y, d:G.rot, buf:[], out:[], t:0, prod:null, refuse:-9, item:null};
+  if(TILES[k].lesson && !G.seen["lesson"+k]){ G.seen["lesson"+k]=true; say(`${TILES[k].name}: ${TILES[k].info}`); }
+}
+
+/* ---------- Factory view ---------- */
+let canvas=null, ctx=null, CS=32, colors={};
+function renderFactory(){
+  const L = G.L;
+  view.innerHTML = `
+  <section class="sheet hero">
+    <div class="row between"><span class="tag">Floor 0${L.id} of 0${LEVELS.length}</span><button class="btn ghost sm" id="exit">All floors</button></div>
+    <h2>${esc(L.name)}</h2>
+    <p>${esc(L.brief)}</p>
+    <div class="objs" id="objs"></div>
+    <div class="stats" id="stats"></div>
+  </section>
+  <div class="floorwrap"><canvas id="floor" aria-label="Factory floor, ${W} by ${H} grid. Use the tools below to build."></canvas></div>
+  <div class="controls" id="controls"></div>
+  <div class="tools" id="tools" role="toolbar" aria-label="Buildings"></div>
+  <section class="sheet info" id="info"></section>
+  <section class="sheet"><span class="tag">Key</span><div class="legend" id="legend"></div></section>`;
+  document.getElementById("exit").onclick=()=>{ G=null; render(); };
+  canvas = document.getElementById("floor"); ctx = canvas.getContext("2d");
+  sizeCanvas(); bindCanvas();
+  renderControls(); renderTools(); renderHud(); renderInfo(); renderLegend();
+}
+function renderHud(){
+  const o = document.getElementById("objs"); if(!o) return;
+  o.innerHTML = G.L.obj.map(ob=>{ const v=Math.min(objVal(ob),ob.n); return `<div class="obj ${v>=ob.n?"done":""}"><span>${esc(ob.label)}</span><b>${v}/${ob.n}</b><div class="bar"><span style="width:${100*v/ob.n}%"></span></div></div>`; }).join("");
+  document.getElementById("stats").innerHTML = `<span>Tick <b>${G.tick}</b></span><span class="${G.defects?"bad":""}">Defects <b>${G.defects}</b></span><span>${G.running?"Running":"Paused"}</span>`;
+}
+function renderControls(){
+  const c = document.getElementById("controls"); if(!c) return;
+  c.innerHTML = `
+   <button class="btn" id="play">${G.running?"Pause":"Play"}</button>
+   <button class="btn ghost" id="speed" aria-label="Speed">${SPEEDS[G.speed]}× speed</button>
+   <button class="btn ghost" id="rot" aria-label="Rotate new buildings">Face ${ARROWS[G.rot]}</button>
+   <button class="btn ghost" id="more">Hint</button>`;
+  document.getElementById("play").onclick=()=>{ if(G.won) return; G.running=!G.running; G.last=performance.now(); renderControls(); renderHud(); };
+  document.getElementById("speed").onclick=()=>{ G.speed=(G.speed+1)%SPEEDS.length; renderControls(); };
+  document.getElementById("rot").onclick=()=>{ G.rot=(G.rot+1)%4; renderControls(); };
+  document.getElementById("more").onclick=showHint;
+}
+function renderTools(){
+  const t = document.getElementById("tools");
+  const ks = ["look", ...G.L.tools, "del"];
+  t.innerHTML = ks.map(k=>`<button class="tool" data-k="${k}" aria-pressed="${G.tool===k}"><span class="code">${TILES[k].code}</span>${esc(TILES[k].name)}</button>`).join("");
+  t.querySelectorAll(".tool").forEach(b=>b.onclick=()=>{ G.tool=b.dataset.k; G.inspect=null; renderTools(); renderInfo(); });
+}
+function renderInfo(){
+  const el = document.getElementById("info"); if(!el) return;
+  let head = "";
+  if(G.inspect){
+    const [x,y]=G.inspect, c=cellAt(x,y);
+    if(!c) head = `<span class="tag">Empty floor</span><p>Nothing built here yet.</p>`;
+    else if(c.k==="src") head = `<span class="tag">Source system · ${esc(c.label)}</span><p>Sends one <strong>${esc(ITEMS[c.emit].n.toLowerCase())}</strong> every ${c.rate} ticks${c.delay?`, starting at tick ${c.delay}`:""}, out of its arrow side. It waits if the next cell is full.</p>`;
+    else if(c.k==="dock") head = `<span class="tag">BI dock</span><p>The reporting team's loading bay. Takes input from any side. It wants ${(G.L.dockWants||[]).map(t=>ITEMS[t].n.toLowerCase()).join(" and ")}. Anything else counts as a defect.</p>`;
+    else if(c.k==="DT") head = `<span class="tag">Dimension table</span><p>${esc(TILES.DT.info)}</p><p class="mono">${DIMTYPES.filter(t=>G.dims[t]).map(t=>`${ITEMS[t].g} ${esc(ITEMS[t].n)}: ${G.dims[t]}`).join("<br>")||"No rows yet."}</p>`;
+    else if(c.k==="belt") head = `<span class="tag">Belt · moving ${ARROWS[c.d]}</span><p>${esc(TILES.belt.info)}</p>`;
+    else head = `<span class="tag">${esc(TILES[c.k].name)} · output ${ARROWS[c.d]}</span><p>${esc(TILES[c.k].info)}</p><p class="foot">Accepts: ${TILES[c.k].accept.map(t=>esc(ITEMS[t].n.toLowerCase())).join(", ")}. Holding ${c.buf.length} in, ${c.out.length} out.</p>`;
+  } else {
+    const k = G.tool;
+    head = `<span class="tag">Tool · ${esc(TILES[k].name)}</span><p>${esc(TILES[k].info)}</p>` +
+      (k!=="look"&&k!=="del" ? `<p class="foot">Tap the floor to place it facing ${ARROWS[G.rot]}. Tap one you've placed to turn it.</p>` : "");
+  }
+  el.innerHTML = head + `<div class="log" aria-live="polite">${G.msgs.map(m=>`<div class="msg ${m.c}">${esc(m.t)}</div>`).join("")}</div>`;
+}
+function renderLegend(){
+  const el = document.getElementById("legend");
+  const used = new Set();
+  G.L.fixed.forEach(f=>f.emit&&used.add(f.emit));
+  const all = ["rawCust","rawProd","rawSale","rawOrder","rawWeb","custChange","invCount","custDim","prodDim","custVer","custOver","confCust","fact","agg","snap","orphan","badsum"];
+  const show = all.filter(t=>used.has(t) || ITEMS[t].sh!=="raw");
+  el.innerHTML = show.map(t=>`<span><canvas width="36" height="36" data-t="${t}"></canvas>${esc(ITEMS[t].n)}</span>`).join("");
+  readColors();
+  el.querySelectorAll("canvas").forEach(cv=>{ const c=cv.getContext("2d"); drawItem(c,ITEMS[cv.dataset.t],18,18,30); });
+}
+function showHint(){
+  overlay.innerHTML = `<div class="overlay" role="dialog" aria-modal="true" aria-label="Hint"><div class="sheet hero"><span class="tag">Hint · ${esc(G.L.name)}</span><p>${esc(G.L.hint)}</p><div class="row"><button class="btn" id="ok">Back to the floor</button><button class="btn ghost" id="rs">Clear the floor</button></div></div></div>`;
+  document.getElementById("ok").onclick=()=>overlay.innerHTML="";
+  document.getElementById("rs").onclick=()=>{ overlay.innerHTML=""; resetLevel(); };
+}
+function showWin(stars){
+  const L = G.L, next = LEVELS.find(l=>l.id===L.id+1);
+  renderControls(); renderHud();
+  overlay.innerHTML = `<div class="overlay" role="dialog" aria-modal="true" aria-label="Floor cleared"><div class="sheet hero">
+    <span class="tag">Floor 0${L.id} cleared in ${G.tick} ticks</span>
+    <div class="stars" style="font-size:2rem" aria-label="${stars} of 3 stars">${"★".repeat(stars)}${"☆".repeat(3-stars)}</div>
+    <h2>${stars===3?"Zero defects. The BI team trusts you.":stars===2?"Shipped, with a few defects.":"Shipped, but the defects were noticed."}</h2>
+    <p>${esc(L.debrief)}</p><span class="concept">Technique: ${esc(L.concept)}</span>
+    ${next && !levelOpen(next) ? `<p class="foot">Floor 0${next.id} needs research first: ${[...new Set(next.tools.filter(t=>!unlocked(t)).flatMap(t=>TILES[t].need))].filter(i=>!P.research[i]).map(i=>esc(SHIFTS[i].name)).join(", ")}.</p>`:""}
+    <div class="row">
+      ${next ? (levelOpen(next) ? `<button class="btn" id="nx">Next floor</button>` : `<button class="btn" id="lab">Go to the Research lab</button>`) : `<button class="btn" id="all">All floors</button>`}
+      <button class="btn ghost" id="again">Replay for 3 stars</button>
+    </div></div></div>`;
+  const b = id => document.getElementById(id);
+  if(b("nx")) b("nx").onclick=()=>startLevel(next.id);
+  if(b("lab")) b("lab").onclick=()=>{ overlay.innerHTML=""; G=null; TAB="research"; render(); };
+  if(b("all")) b("all").onclick=()=>{ overlay.innerHTML=""; G=null; render(); };
+  b("again").onclick=()=>{ overlay.innerHTML=""; startLevel(L.id); };
+}
+
+/* ---------- Canvas input ---------- */
+function sizeCanvas(){
+  const w = canvas.parentElement.clientWidth - 12;
+  CS = Math.floor(w / W);
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = CS*W*dpr; canvas.height = CS*H*dpr;
+  canvas.style.width = CS*W+"px"; canvas.style.height = CS*H+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener("resize",()=>{ if(canvas && document.body.contains(canvas)) sizeCanvas(); });
+function bindCanvas(){
+  let drag = null;
+  const cellOf = e => { const r=canvas.getBoundingClientRect(); return [Math.floor((e.clientX-r.left)/CS), Math.floor((e.clientY-r.top)/CS)]; };
+  canvas.addEventListener("pointerdown", e=>{
+    const [x,y] = cellOf(e); if(cellAt(x,y)===undefined) return;
+    place(x,y,G.tool); renderInfo();
+    if(G.tool==="belt" || G.tool==="del"){ drag=[x,y]; try{canvas.setPointerCapture(e.pointerId)}catch(_){} }
+  });
+  canvas.addEventListener("pointermove", e=>{
+    if(!drag) return;
+    let [x,y] = cellOf(e);
+    x=Math.max(0,Math.min(W-1,x)); y=Math.max(0,Math.min(H-1,y));
+    while(drag[0]!==x || drag[1]!==y){
+      const dx=Math.sign(x-drag[0]), dy=Math.sign(y-drag[1]);
+      const step = dx!==0 ? [dx,0] : [0,dy];
+      const d = DIRS.findIndex(v=>v[0]===step[0]&&v[1]===step[1]);
+      const nx=drag[0]+step[0], ny=drag[1]+step[1];
+      if(G.tool==="belt"){
+        const prev = cellAt(drag[0],drag[1]);
+        if(prev && prev.k==="belt" && !prev.fixed) prev.d = d;
+        const nxt = cellAt(nx,ny);
+        if(!nxt) G.grid[ny][nx] = {k:"belt",x:nx,y:ny,d,item:null};
+        else if(nxt.k==="belt" && !nxt.fixed) nxt.d = d;
+        G.rot = d;
+      } else {
+        const nxt = cellAt(nx,ny); if(nxt && !nxt.fixed) G.grid[ny][nx]=null;
+      }
+      drag=[nx,ny];
+    }
+  });
+  const end = ()=>{ if(drag && G && G.tool==="belt") renderControls(); drag=null; };
+  canvas.addEventListener("pointerup", end); canvas.addEventListener("pointercancel", end);
+}
+document.addEventListener("keydown", e=>{
+  if(!G || TAB!=="factory" || overlay.innerHTML) return;
+  if(e.key==="r"||e.key==="R"){ G.rot=(G.rot+1)%4; renderControls(); renderInfo(); }
+  if(e.key===" " && e.target===document.body){ e.preventDefault(); document.getElementById("play").click(); }
+});
+
+/* ---------- Drawing ---------- */
+function readColors(){
+  const s = getComputedStyle(document.documentElement);
+  for(const k of ["paper","sheet","ink","muted","line","accent","good","bad","belt","cust","prod","inv"]) colors[k]=s.getPropertyValue("--"+k).trim();
+}
+const famColor = f => ({cust:colors.cust,prod:colors.prod,sale:colors.accent,inv:colors.inv,bad:colors.bad})[f];
+
+function drawItem(c, it, x, y, size){
+  const r = size*0.36, col = famColor(it.fam);
+  c.save(); c.translate(x,y);
+  c.lineWidth = Math.max(1.5,size*0.07);
+  c.beginPath();
+  if(it.sh==="raw"||it.sh==="bad"){ c.arc(0,0,r,0,Math.PI*2); }
+  else if(it.sh==="dim"){ c.rect(-r*0.9,-r*0.9,r*1.8,r*1.8); }
+  else if(it.sh==="fact"){ c.moveTo(0,-r*1.15); c.lineTo(r*1.15,0); c.lineTo(0,r*1.15); c.lineTo(-r*1.15,0); c.closePath(); }
+  else if(it.sh==="sum"){ c.moveTo(0,-r*1.1); c.lineTo(r*1.1,r*0.85); c.lineTo(-r*1.1,r*0.85); c.closePath(); }
+  if(it.sh==="raw"){ c.fillStyle=colors.sheet; c.fill(); c.strokeStyle=col; c.stroke(); }
+  else { c.fillStyle=col; c.fill(); }
+  c.fillStyle = it.sh==="raw" ? col : colors.sheet;
+  c.font = `600 ${Math.round(size*0.4)}px "IBM Plex Mono", monospace`;
+  c.textAlign="center"; c.textBaseline="middle";
+  c.fillText(it.g, 0, it.sh==="sum"? r*0.2 : 1);
+  c.restore();
+}
+
+function arrowHead(c, cx, cy, d, s, col){
+  c.save(); c.translate(cx,cy); c.rotate(d*Math.PI/2);
+  c.beginPath(); c.moveTo(0,-s/2+1); c.lineTo(s*0.16,-s/2+s*0.16); c.lineTo(-s*0.16,-s/2+s*0.16); c.closePath();
+  c.fillStyle=col; c.fill(); c.restore();
+}
+
+function drawTile(c, x, y, t, time){
+  const px=x*CS, py=y*CS, cx=px+CS/2, cy=py+CS/2;
+  if(t.k==="belt"){
+    c.fillStyle=colors.belt; c.fillRect(px+1,py+1,CS-2,CS-2);
+    c.save(); c.translate(cx,cy); c.rotate(t.d*Math.PI/2);
+    c.beginPath(); c.rect(-CS/2+1,-CS/2+1,CS-2,CS-2); c.clip();
+    const off = (G.running ? (time/tickMs()) % 1 : 0) * (CS/2);
+    c.strokeStyle=colors.muted; c.lineWidth=1.5; c.globalAlpha=.55;
+    for(let i=-1;i<3;i++){ const yy = CS/2 - i*CS/2 - off; c.beginPath(); c.moveTo(-CS*0.22,yy); c.lineTo(0,yy-CS*0.18); c.lineTo(CS*0.22,yy); c.stroke(); }
+    c.restore(); c.globalAlpha=1;
+    return;
+  }
+  if(t.k==="src"){
+    c.fillStyle=colors.paper; c.fillRect(px+2,py+2,CS-4,CS-4);
+    c.strokeStyle=colors.accent; c.lineWidth=2; c.strokeRect(px+2,py+2,CS-4,CS-4);
+    c.fillStyle=colors.ink; c.font=`600 ${Math.round(CS*0.27)}px "IBM Plex Mono", monospace`; c.textAlign="center"; c.textBaseline="middle";
+    c.fillText(t.label,cx,cy-CS*0.12);
+    drawItem(c,ITEMS[t.emit],cx,cy+CS*0.2,CS*0.42);
+    arrowHead(c,cx,cy,t.d,CS,colors.accent);
+    return;
+  }
+  if(t.k==="dock"){
+    c.fillStyle=colors.ink; c.fillRect(px+2,py+2,CS-4,CS-4);
+    c.fillStyle=colors.sheet; c.font=`700 ${Math.round(CS*0.32)}px Archivo, sans-serif`; c.textAlign="center"; c.textBaseline="middle";
+    c.fillText("BI",cx,cy);
+    return;
+  }
+  const refusing = G.tick - t.refuse <= 1;
+  c.fillStyle=colors.sheet; c.fillRect(px+2,py+2,CS-4,CS-4);
+  c.strokeStyle= refusing ? colors.bad : colors.ink; c.lineWidth=2; c.strokeRect(px+2,py+2,CS-4,CS-4);
+  if(t.k==="DT"){
+    c.strokeStyle=colors.muted; c.lineWidth=1;
+    for(let i=1;i<=3;i++){ c.beginPath(); c.moveTo(px+CS*0.2,py+CS*(0.22+i*0.16)); c.lineTo(px+CS*0.8,py+CS*(0.22+i*0.16)); c.stroke(); }
+    c.fillStyle=colors.ink; c.font=`600 ${Math.round(CS*0.24)}px "IBM Plex Mono", monospace`; c.textAlign="center"; c.textBaseline="middle";
+    c.fillText("DIM",cx,py+CS*0.22);
+    if(t.fixed){ c.strokeStyle=colors.accent; c.lineWidth=2; c.strokeRect(px+2,py+2,CS-4,CS-4); }
+    return;
+  }
+  c.fillStyle=colors.ink; c.font=`600 ${Math.round(CS*0.32)}px "IBM Plex Mono", monospace`; c.textAlign="center"; c.textBaseline="middle";
+  c.fillText(TILES[t.k].code,cx,cy-1);
+  arrowHead(c,cx,cy,t.d,CS,colors.accent);
+  // buffer pips and progress
+  const n = Math.min(6,t.buf.length);
+  for(let i=0;i<n;i++){ c.fillStyle=colors.muted; c.fillRect(px+5+i*(CS*0.1),py+CS-8,CS*0.07,3); }
+  if(t.prod){ c.fillStyle=colors.accent; c.fillRect(px+4,py+5,(CS-8)*(1-t.t/2),3); }
+}
+
+function draw(now){
+  requestAnimationFrame(draw);
+  if(!G || !canvas || !document.body.contains(canvas)) return;
+  if(G.running && now - G.last >= tickMs()){ G.last = now; tick(); }
+  if(Math.floor(now/1000)!==draw._s){ draw._s=Math.floor(now/1000); readColors(); }
+  const p = G.running ? Math.min(1,(now-G.last)/tickMs()) : 1;
+  const c = ctx;
+  c.fillStyle=colors.sheet; c.fillRect(0,0,CS*W,CS*H);
+  c.strokeStyle=colors.line; c.lineWidth=1;
+  for(let i=0;i<=W;i++){ c.beginPath(); c.moveTo(i*CS+.5,0); c.lineTo(i*CS+.5,CS*H); c.stroke(); }
+  for(let i=0;i<=H;i++){ c.beginPath(); c.moveTo(0,i*CS+.5); c.lineTo(CS*W,i*CS+.5); c.stroke(); }
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){ const t=G.grid[y][x]; if(t) drawTile(c,x,y,t,now); }
+  if(G.inspect){ const [x,y]=G.inspect; c.strokeStyle=colors.accent; c.lineWidth=3; c.setLineDash([4,3]); c.strokeRect(x*CS+1.5,y*CS+1.5,CS-3,CS-3); c.setLineDash([]); }
+  const lerp=(a,b)=>a+(b-a)*p;
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    const t=G.grid[y][x]; if(!t||!t.item) continue;
+    const it=t.item, ix=lerp(it.fx,x), iy=lerp(it.fy,y);
+    drawItem(c,ITEMS[it.type],ix*CS+CS/2,iy*CS+CS/2,CS*0.62);
+  }
+  if(p<1) for(const f of G.fx){ c.globalAlpha=1-p; drawItem(c,ITEMS[f.type],lerp(f.fx,f.tx)*CS+CS/2,lerp(f.fy,f.ty)*CS+CS/2,CS*0.62*(1-p*0.5)); c.globalAlpha=1; }
+}
+readColors(); requestAnimationFrame(draw);
+
+/* =====================================================================
+   RESEARCH LAB (quiz)
+   ===================================================================== */
+let Q = null;
+const unlocksOf = i => Object.keys(TILES).filter(k=>(TILES[k].need||[]).includes(i));
+function renderLab(){
+  view.innerHTML = `
+  <section class="sheet hero"><span class="tag">Research lab</span><h2>Answer design questions, unlock machines</h2>
+  <p>Each research pack is a short set of work orders. Get at least 60% right to complete it. Some machines need two packs.</p></section>
+  <section class="sheet"><span class="tag">Packs</span><ol class="list">${SHIFTS.map((s,i)=>{
+    const done = P.research[i];
+    return `<li><span class="n">R${s.id}</span><div class="body">
+      <div class="row between"><h3>${esc(s.name)}</h3>${done?`<span class="chip ok">Researched</span>`:""}</div>
+      <small>${esc(s.sub)} · ${s.qs.length} questions</small>
+      <div class="row">${unlocksOf(i).map(k=>`<span class="chip">${TILES[k].code} ${esc(TILES[k].name)}${TILES[k].need.length>1?" (with "+TILES[k].need.filter(j=>j!==i).map(j=>"R"+SHIFTS[j].id).join(", ")+")":""}</span>`).join("")}</div>
+      <div class="row"><button class="btn sm ${done?"ghost":""}" data-r="${i}">${done?"Review again":"Start research"}</button></div>
+    </div></li>`;}).join("")}</ol></section>`;
+  view.querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{ Q={pack:+b.dataset.r,i:0,right:0}; resetQ(); render(); });
+}
+function resetQ(){ Q.answered=false; Q.correct=null; Q.pick=null; const q=SHIFTS[Q.pack].qs[Q.i]; if(q.type==="matrix") Q.matrix=q.answer.map(r=>r.map(()=>0)); }
+function renderQuiz(){
+  const s=SHIFTS[Q.pack];
+  if(Q.i>=s.qs.length) return renderQuizEnd();
+  const q=s.qs[Q.i];
+  let body="";
+  if(q.type==="matrix"){
+    body = `<p>${esc(q.q)}</p><ul class="clues">${q.clues.map((c,i)=>`<li><strong>${esc(q.procs[i])}:</strong> ${esc(c)}</li>`).join("")}</ul>
+    <div class="matrix"><table><thead><tr><th class="p">Process</th>${q.dims.map(d=>`<th>${esc(d)}</th>`).join("")}</tr></thead><tbody>
+    ${q.procs.map((p,r)=>`<tr><th class="p">${esc(p)}</th>${q.dims.map((d,c)=>{ const on=Q.matrix[r][c];
+      return `<td><button class="cell ${on?"on":""}" data-r="${r}" data-c="${c}" aria-pressed="${on?"true":"false"}" aria-label="${esc(p)} uses ${esc(d)}" ${Q.answered?"disabled":""}>${on?"✕":""}</button></td>`}).join("")}</tr>`).join("")}
+    </tbody></table></div>${Q.answered?"":`<div class="row"><button class="btn" id="check">Check matrix</button></div>`}`;
+  } else {
+    const chips=q.type==="sort";
+    body = `${chips?`<p class="tag">Classify this</p><div class="item">${esc(q.item)}</div>`:`<p>${esc(q.q)}</p>`}
+    <div class="opts ${chips?"chips":""}">${q.opts.map((o,i)=>{ let cls=""; if(Q.answered){ if(i===q.a) cls="right"; else if(i===Q.pick) cls="wrong"; }
+      return `<button class="opt ${cls}" data-i="${i}" ${Q.answered?"disabled":""}><span class="k">${String.fromCharCode(65+i)}</span><span>${esc(o)}</span></button>`}).join("")}</div>`;
+  }
+  const verdict = Q.answered ? `<div class="verdict ${Q.correct?"":"no"}" role="alert"><strong>${Q.correct?"Correct.":"Not quite."}</strong><p>${esc(q.why)}</p><span class="concept">Technique: ${esc(q.concept)}</span></div>
+    <div class="row"><button class="btn" id="next">${Q.i+1<s.qs.length?"Next question":"See results"}</button></div>` : "";
+  view.innerHTML = `<section class="sheet hero"><div class="row between"><span class="tag">R${s.id} · ${esc(s.name)} · ${Q.i+1}/${s.qs.length}</span><button class="btn ghost sm" id="quit">Leave</button></div>
+    <div class="bar" aria-hidden="true"><span style="width:${100*Q.i/s.qs.length}%"></span></div>${body}${verdict}</section>`;
+  document.getElementById("quit").onclick=()=>{ Q=null; render(); };
+  view.querySelectorAll(".opt").forEach(b=>b.onclick=()=>answer(+b.dataset.i===q.a,+b.dataset.i,q));
+  view.querySelectorAll(".cell").forEach(b=>b.onclick=()=>{ Q.matrix[+b.dataset.r][+b.dataset.c]^=1; render(); });
+  const ch=document.getElementById("check"); if(ch) ch.onclick=()=>{ const ok=Q.matrix.every((row,r)=>row.every((v,c)=>v===q.answer[r][c])); if(!ok) Q.matrix=q.answer.map(r=>r.slice()); answer(ok,null,q); };
+  const nx=document.getElementById("next"); if(nx){ nx.onclick=()=>{ Q.i++; if(Q.i<s.qs.length) resetQ(); render(); window.scrollTo({top:0}); }; nx.focus({preventScroll:true}); }
+}
+function answer(ok,pick,q){
+  if(Q.answered) return;
+  Q.answered=true; Q.correct=ok; Q.pick=pick; P.learned[q.concept]=true;
+  if(ok) Q.right++; else P.missed[q.concept]=true;
+  save(); render();
+}
+function renderQuizEnd(){
+  const s=SHIFTS[Q.pack], n=s.qs.length, pct=Math.round(100*Q.right/n), pass=pct>=60;
+  const wasDone = P.research[Q.pack];
+  if(pass) { P.research[Q.pack]=true; save(); }
+  const newly = pass && !wasDone ? unlocksOf(Q.pack).filter(unlocked) : [];
+  const pack = Q.pack;
+  view.innerHTML = `<section class="sheet hero"><span class="tag">R${s.id} · ${esc(s.name)} · results</span>
+    <h2>${pass?"Research complete":"Research failed"}</h2>
+    <p>${Q.right} of ${n} correct (${pct}%). ${pass?"":"You need 60% to complete this pack. Read the explanations and try again."}</p>
+    ${newly.length?`<p><strong>Unlocked:</strong> ${newly.map(k=>esc(TILES[k].name)).join(", ")}.</p>`:""}
+    ${pass && !newly.length && unlocksOf(pack).some(k=>!unlocked(k)) ? `<p class="foot">${unlocksOf(pack).filter(k=>!unlocked(k)).map(k=>esc(TILES[k].name)).join(", ")} also needs ${TILES[unlocksOf(pack).find(k=>!unlocked(k))].need.filter(j=>!P.research[j]).map(j=>"R"+SHIFTS[j].id+" "+esc(SHIFTS[j].name)).join(", ")}.</p>`:""}
+    <div class="row"><button class="btn" id="a">${pass?"Back to the factory":"Try again"}</button><button class="btn ghost" id="b">All packs</button></div></section>`;
+  document.getElementById("a").onclick=()=>{ if(pass){ Q=null; TAB="factory"; render(); } else { Q={pack,i:0,right:0}; resetQ(); render(); } };
+  document.getElementById("b").onclick=()=>{ Q=null; render(); };
+}
+
+/* =====================================================================
+   MANUAL
+   ===================================================================== */
+function renderManual(){
+  const concepts = [...new Set(SHIFTS.flatMap(s=>s.qs.map(q=>q.concept)))];
+  const note = {}; SHIFTS.forEach(s=>s.qs.forEach(q=>{ if(!note[q.concept]) note[q.concept]=q.why; }));
+  const builds = ["belt","KS","DT","FA","V2","OW","CF","AG","SN"];
+  view.innerHTML = `
+  <section class="sheet"><div><span class="tag">Buildings</span><h2>What's on the floor</h2></div>
+  <div class="manual">${builds.map(k=>unlocked(k)
+     ?`<details><summary>${TILES[k].code} · ${esc(TILES[k].name)}</summary><p>${esc(TILES[k].info)}</p>${TILES[k].lesson?`<p class="concept">Technique: ${esc(TILES[k].lesson)}</p>`:""}</details>`
+     :`<details class="locked"><summary>${TILES[k].code} · ${esc(TILES[k].name)} · locked</summary><p>Research ${TILES[k].need.map(i=>"R"+SHIFTS[i].id+" "+esc(SHIFTS[i].name)).join(" and ")} to unlock.</p></details>`).join("")}</div></section>
+  <section class="sheet"><div><span class="tag">Field manual</span><h2>Techniques you've met</h2></div>
+  <p class="foot">Each technique unlocks the first time it comes up in the Research lab.</p>
+  <div class="manual">${concepts.map(c=>P.learned[c]
+     ?`<details><summary>${esc(c)}${P.missed[c]?" · review":""}</summary><p>${esc(note[c])}</p></details>`
+     :`<details class="locked"><summary>Locked technique</summary><p>Complete more research to unlock this.</p></details>`).join("")}</div>
+  <div class="row"><button class="btn ghost sm" id="wipe">Reset all progress</button></div></section>`;
+  document.getElementById("wipe").onclick=function(){
+    if(this.dataset.armed){ P={research:{},levels:{},learned:{},missed:{}}; save(); G=null; Q=null; render(); }
+    else { this.dataset.armed="1"; this.textContent="Tap again to wipe research, stars and manual"; }
+  };
+}
+
+render();
+</script>
+</body>
+</html>
